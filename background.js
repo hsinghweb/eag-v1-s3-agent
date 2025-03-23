@@ -152,11 +152,13 @@ async function continueConversation(history) {
   return sendToGeminiAPI(history);
 }
 
+// Import PythonShell statically at the top level
+import { PythonShell } from 'python-shell';
+
 // Execute tool call
 async function executeToolCall(toolCall) {
   try {
     const { functionName, parameters } = toolCall;
-    const { PythonShell } = await import('python-shell');
     
     // Validate tool name
     const validTools = tools[0].functionDeclarations.map(t => t.name);
