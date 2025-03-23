@@ -2,20 +2,31 @@
 
 import math
 import re
+import logging
+import json
 
-def calculate(expression):
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('AgentTools')
+
+def calculate(params):
     """
     Perform mathematical calculations using Python.
     
     Args:
-        expression (str): The mathematical expression to evaluate
+        params (dict): Dictionary containing the expression to evaluate
         
     Returns:
-        str: The result of the calculation or an error message
+        dict: The result of the calculation or an error message
     """
     try:
+        expression = params['expression']
+        logger.info(f"Called calculate with expression={expression}")
+        
         # Remove any characters that aren't part of a valid mathematical expression
-        # Only allow numbers, operators, parentheses, and common math functions
         sanitized_expr = re.sub(r'[^0-9+\-*/().\s^]', '', expression)
         
         # Replace ^ with ** for exponentiation
@@ -24,72 +35,79 @@ def calculate(expression):
         # Evaluate the expression
         result = eval(sanitized_expr, {"__builtins__": {}}, {"math": math})
         
-        return f"Calculation result: {result}"
+        output = {"result": result}
+        logger.info(f"calculate output: {output}")
+        return output
     except Exception as e:
-        return f"Error calculating: {str(e)}"
+        error = {"error": str(e)}
+        logger.error(f"calculate error: {error}")
+        return error
 
-def fibonacci(n):
+def fibonacci(params):
     """
     Generate Fibonacci sequence up to n numbers.
     
     Args:
-        n (int): Number of Fibonacci numbers to generate
+        params (dict): Dictionary containing n (number of Fibonacci numbers to generate)
         
     Returns:
-        str: The Fibonacci sequence or an error message
+        dict: The Fibonacci sequence or an error message
     """
     try:
+        n = params['n']
+        logger.info(f"Called fibonacci with n={n}")
+        
         # Validate input
         n = int(n)
         if n <= 0:
-            return "Error: n must be a positive integer"
+            error = {"error": "n must be a positive integer"}
+            logger.error(f"fibonacci error: {error}")
+            return error
         
         # Generate Fibonacci sequence
-        fibonacci_seq = []
+        sequence = []
         if n >= 1:
-            fibonacci_seq.append(0)
+            sequence.append(0)
         if n >= 2:
-            fibonacci_seq.append(1)
+            sequence.append(1)
         
         for i in range(2, n):
-            fibonacci_seq.append(fibonacci_seq[i-1] + fibonacci_seq[i-2])
+            sequence.append(sequence[i-1] + sequence[i-2])
         
-        return f"Fibonacci sequence ({n} numbers): {', '.join(map(str, fibonacci_seq))}"
+        output = {"sequence": sequence}
+        logger.info(f"fibonacci output: {output}")
+        return output
     except Exception as e:
-        return f"Error generating Fibonacci sequence: {str(e)}"
+        error = {"error": str(e)}
+        logger.error(f"fibonacci error: {error}")
+        return error
 
-def exponential(numbers):
+def exponential(params):
     """
     Calculate exponential values (e^x) for a list of numbers.
     
     Args:
-        numbers (list): List of numbers to calculate exponential values for
+        params (dict): Dictionary containing list of numbers to calculate exponential values for
         
     Returns:
-        str: The exponential values or an error message
+        list: List of dictionaries containing the numbers and their exponential values
     """
     try:
-        # Validate input
-        if not isinstance(numbers, list):
-            return "Error: Input must be a list of numbers"
+        numbers = params['numbers']
+        logger.info(f"Called exponential with numbers={numbers}")
         
         # Calculate exponential values
         results = []
         for num in numbers:
+            exp_value = math.exp(num)
             results.append({
                 "number": num,
-                "exponential": math.exp(num)
+                "exponential": exp_value
             })
         
-        # Format the results
-        formatted_results = [f"e^{item['number']} = {item['exponential']}" for item in results]
-        
-        return f"Exponential values:\n{', '.join(formatted_results)}"
+        logger.info(f"exponential output: {results}")
+        return results
     except Exception as e:
-        return f"Error calculating exponential values: {str(e)}"
-
-# For testing purposes
-if __name__ == "__main__":
-    print(calculate("2^10 * 3.14"))
-    print(fibonacci(10))
-    print(exponential([1, 2, 3]))
+        error = {"error": str(e)}
+        logger.error(f"exponential error: {error}")
+        return error
