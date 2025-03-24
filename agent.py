@@ -89,22 +89,39 @@ class Agent:
         tool_info = self.available_tools[tool_name]
         tool_function = tool_info['function']
         
-        # Try to parse parameters from raw_params string
         try:
-            # For now, assume single parameter or use previous results
+            # Handle parameter passing between tools
             if previous_results and tool_name in previous_results:
                 params = previous_results[tool_name]
             else:
-                # Simple parameter parsing - in a real implementation, this would be more sophisticated
-                params = raw_params.strip()
-                # Try to convert to number if possible
-                try:
-                    params = int(params)
-                except ValueError:
+                # Convert parameters based on tool name
+                if tool_name == 'fibonacci':
+                    # For fibonacci, ensure we have an integer
                     try:
-                        params = float(params)
-                    except ValueError:
-                        pass
+                        params = int(str(raw_params).strip())
+                    except (ValueError, TypeError):
+                        params = 6  # Default value
+                elif tool_name in ['exponential', 'sum_values']:
+                    # These functions expect lists
+                    if isinstance(raw_params, list):
+                        params = raw_params
+                    elif isinstance(raw_params, (int, float)):
+                        params = [raw_params]
+                    else:
+                        return f"Error: Invalid parameter type for {tool_name}"
+                else:
+                    # For other tools, try basic type conversion
+                    params = raw_params
+                    if isinstance(params, str):
+                        params = params.strip()
+                        # Try to convert to number if possible
+                        try:
+                            params = int(params)
+                        except ValueError:
+                            try:
+                                params = float(params)
+                            except ValueError:
+                                pass
             
             # Log tool execution
             print(f"\n=== Local Tool Call: {tool_name} ===")
@@ -148,7 +165,14 @@ class Agent:
         print("\n=== Starting Agent Execution ===")
         print("Query:", query)
         
-        # Send query to LLM for planning
+        # First check if we can handle this with local tools
+        local_tools_plan = self.plan_with_local_tools(query)
+        if local_tools_plan:
+            print("\nExecuting with local tools:")
+            return self.execute_local_plan(local_tools_plan)
+        
+        # If local tools can't handle it, use LLM for planning
+        print("\nNo direct local tool match, using LLM for planning...")
         llm_response = self.get_llm_response(query)
         print("\nLLM Planning Response:")
         print(llm_response)
@@ -163,10 +187,53 @@ class Agent:
         for tool_call in tool_calls:
             result = self.execute_tool(tool_call, previous_results)
             previous_results[tool_call['tool']] = result
-            print(f"\nTOOL RESULT ({tool_call['tool']}):")
-            print(result)
+            print(f"\nTOOL RESULT ({tool_call['tool']}):\n{result}")
         
         return previous_results
+
+    def plan_with_local_tools(self, query):
+        """Analyze query to see if it can be handled by local tools."""
+        query_lower = query.lower()
+        
+        # Check for a sequence of operations
+        if ('fibonacci' in query_lower or 'fib' in query_lower) and \
+           ('exponential' in query_lower or 'exp' in query_lower or 'e^x' in query_lower) and \
+           ('sum' in query_lower):
+            # Extract number from query or use default
+            try:
+                n = int(''.join(filter(str.isdigit, query_lower)))
+            except ValueError:
+                n = 6  # Default value
+            
+            # Create tool call sequence
+            return [
+                {"tool": "fibonacci", "raw_params": n},  # Pass n directly as integer
+                {"tool": "exponential", "raw_params": None},  # Will use previous result
+                {"tool": "sum_values", "raw_params": None}  # Will use previous result
+            ]
+        
+        return None
+
+    def execute_local_plan(self, tool_calls):
+        """Execute a sequence of local tool calls."""
+        results = {}
+        for i, tool_call in enumerate(tool_calls):
+            # For first tool call, use raw parameters
+            if i == 0:
+                result = self.execute_tool(tool_call)
+            else:
+                # For subsequent calls, pass the previous tool's result
+                prev_tool = tool_calls[i-1]['tool']
+                if prev_tool in results and results[prev_tool] is not None:
+                    # Pass previous result as raw_params
+                    tool_call['raw_params'] = results[prev_tool]
+                    result = self.execute_tool(tool_call)
+                else:
+                    result = f"Error: No valid result from previous tool {prev_tool}"
+            
+            results[tool_call['tool']] = result
+            print(f"\nTOOL RESULT ({tool_call['tool']}):\n{result}")
+        return results
 
 # Main execution
 if __name__ == "__main__":
