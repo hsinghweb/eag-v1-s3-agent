@@ -1,8 +1,9 @@
 import os
 import json
+import inspect
+import importlib
 import google.generativeai as genai
 from dotenv import load_dotenv
-from tools import calculate, fibonacci, exponential, sum_values
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,17 +18,34 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 
 # Set up the model
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 class Agent:
     def __init__(self):
         self.conversation_history = []
-        self.available_tools = {
-            "calculate": calculate,
-            "fibonacci": fibonacci,
-            "exponential": exponential,
-            "sum_values": sum_values
-        }
+        self.available_tools = self.discover_tools()
+    
+    def discover_tools(self):
+        """Dynamically discover available tools from tools.py"""
+        try:
+            tools_module = importlib.import_module('tools')
+            tools = {}
+            
+            # Get all callable objects (functions) from tools module
+            for name, obj in inspect.getmembers(tools_module):
+                if inspect.isfunction(obj) and not name.startswith('_'):
+                    # Get function documentation and parameters
+                    doc = inspect.getdoc(obj) or ''
+                    sig = inspect.signature(obj)
+                    tools[name] = {
+                        'function': obj,
+                        'description': doc,
+                        'parameters': list(sig.parameters.keys())
+                    }
+            return tools
+        except ImportError:
+            print("Error: Could not import tools module")
+            return {}
     
     def add_to_history(self, role, content):
         """Add a message to the conversation history."""
@@ -42,90 +60,72 @@ class Agent:
     
     def parse_tool_calls(self, response_text):
         """Parse the response to identify tool calls."""
-        # Look for tool calls in the format: TOOL_CALL[tool_name(parameters)]
         tool_calls = []
         
-        # Simple parsing logic - in a real implementation, you might want to use regex or more robust parsing
-        if "I need to use the following tools:" in response_text or "I'll use these tools:" in response_text:
+        if "I need to use" in response_text.lower() or "I'll use" in response_text.lower():
             lines = response_text.split("\n")
-            plan_lines = []
-            tool_section = False
-            
             for line in lines:
-                if "I need to use the following tools:" in line or "I'll use these tools:" in line or "Here's my plan:" in line:
-                    tool_section = True
-                    plan_lines.append(line)
-                elif tool_section and line.strip() and not line.startswith("Final answer:"):
-                    plan_lines.append(line)
-                    
-                    # Check for tool names
-                    for tool_name in self.available_tools.keys():
-                        if tool_name in line.lower():
-                            # Extract parameters - this is a simplified approach
-                            if tool_name == "calculate" and "calculate" in line.lower():
-                                # Extract the expression
-                                parts = line.split("calculate", 1)[1].strip()
-                                if parts:
-                                    tool_calls.append({"tool": "calculate", "params": parts})
-                            
-                            elif tool_name == "fibonacci" and "fibonacci" in line.lower():
-                                # Extract the number
-                                parts = line.lower().split("fibonacci", 1)[1].strip()
-                                try:
-                                    n = int(''.join(filter(str.isdigit, parts)))
-                                    tool_calls.append({"tool": "fibonacci", "params": n})
-                                except:
-                                    pass
-                            
-                            elif tool_name == "exponential" and "exponential" in line.lower():
-                                # This would need more sophisticated parsing in a real implementation
-                                if "fibonacci" in self.conversation_history[-2]["content"].lower():
-                                    tool_calls.append({"tool": "exponential", "params": "fibonacci_result"})
-                            
-                            elif tool_name == "sum_values" and "sum" in line.lower():
-                                if "exponential" in self.conversation_history[-2]["content"].lower():
-                                    tool_calls.append({"tool": "sum_values", "params": "exponential_result"})
-            
-            # Print the plan
-            if plan_lines:
-                print("\nPLAN:")
-                for line in plan_lines:
-                    print(line)
-                print()
-        
+                line = line.lower().strip()
+                # Look for tool mentions in the line
+                for tool_name in self.available_tools.keys():
+                    if tool_name.lower() in line:
+                        # Extract potential parameters from the line
+                        params_str = line[line.find(tool_name) + len(tool_name):].strip()
+                        # Add tool call with raw parameter string
+                        tool_calls.append({
+                            "tool": tool_name,
+                            "raw_params": params_str
+                        })
         return tool_calls
     
     def execute_tool(self, tool_call, previous_results=None):
         """Execute a tool call and return the result."""
         tool_name = tool_call["tool"]
-        params = tool_call["params"]
+        raw_params = tool_call.get("raw_params", "")
         
         if tool_name not in self.available_tools:
             return f"Error: Tool '{tool_name}' not found."
         
-        tool_function = self.available_tools[tool_name]
+        tool_info = self.available_tools[tool_name]
+        tool_function = tool_info['function']
         
-        # Handle special parameter cases
-        if params == "fibonacci_result" and previous_results and "fibonacci" in previous_results:
-            params = previous_results["fibonacci"]
-        elif params == "exponential_result" and previous_results and "exponential" in previous_results:
-            params = previous_results["exponential"]
-        
-        # Log before calling the tool
-        print(f"CALLING TOOL: {tool_name}")
-        print(f"INPUT: {params}")
-        
-        # Call the tool
-        result = tool_function(params)
-        
-        # Log after calling the tool
-        print(f"OUTPUT: {result}\n")
-        
-        return result
+        # Try to parse parameters from raw_params string
+        try:
+            # For now, assume single parameter or use previous results
+            if previous_results and tool_name in previous_results:
+                params = previous_results[tool_name]
+            else:
+                # Simple parameter parsing - in a real implementation, this would be more sophisticated
+                params = raw_params.strip()
+                # Try to convert to number if possible
+                try:
+                    params = int(params)
+                except ValueError:
+                    try:
+                        params = float(params)
+                    except ValueError:
+                        pass
+            
+            # Log tool execution
+            print(f"\n=== Local Tool Call: {tool_name} ===")
+            print(f"Parameters: {json.dumps(params, indent=2)}")
+            
+            # Execute the tool
+            result = tool_function(params)
+            
+            print(f"Result: {result}")
+            print(f"=== Tool Execution Completed ===\n")
+            
+            return result
+            
+        except Exception as e:
+            return f"Error executing {tool_name}: {str(e)}"
     
     def get_llm_response(self, query):
         """Send query to Gemini API and return the response."""
         try:
+            print("\n=== LLM Call ===\nSending query to Gemini model...")
+            
             # Add user query to conversation history
             self.add_to_history("user", query)
             
@@ -137,21 +137,26 @@ class Agent:
             # Add AI response to conversation history
             self.add_to_history("assistant", response.text)
             
+            print("=== LLM Response Received ===\n")
+            
             return response.text
         except Exception as e:
             return f"Error: {str(e)}"
 
     def run_agent(self, query):
         """Run the agent with a user query."""
+        print("\n=== Starting Agent Execution ===")
+        print("Query:", query)
+        
         # Send query to LLM for planning
         llm_response = self.get_llm_response(query)
-        print("\nLLM RESPONSE:")
+        print("\nLLM Planning Response:")
         print(llm_response)
         
         # Parse tool calls from LLM response
         tool_calls = self.parse_tool_calls(llm_response)
-        print("\nTOOL CALLS:")
-        print(tool_calls)
+        print("\nIdentified Tool Calls:")
+        print(json.dumps(tool_calls, indent=2))
         
         # Execute tools in sequence
         previous_results = {}
