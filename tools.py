@@ -208,7 +208,15 @@ def exponential(numbers):
     """
     print(f"Entering exponential with numbers: {numbers}")
     try:
-        return [math.exp(num) for num in numbers]
+        if not isinstance(numbers, list):
+            if isinstance(numbers, (int, float)):
+                numbers = [numbers]
+            else:
+                raise ValueError(f"Expected a number or list of numbers, got {type(numbers)}")
+        
+        results = [math.exp(num) for num in numbers]
+        print(f"Calculated exponential values: {results}")
+        return results
     except Exception as e:
         print(f"Exiting exponential with error: {str(e)}")
         return f"Error in exponential calculation: {str(e)}"
