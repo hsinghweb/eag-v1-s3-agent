@@ -123,24 +123,45 @@ class Agent:
         
         return result
     
+    def get_llm_response(self, query):
+        """Send query to Gemini API and return the response."""
+        try:
+            # Add user query to conversation history
+            self.add_to_history("user", query)
+            
+            # Generate response using Gemini model
+            response = model.generate_content(
+                contents=self.format_conversation()
+            )
+            
+            # Add AI response to conversation history
+            self.add_to_history("assistant", response.text)
+            
+            return response.text
+        except Exception as e:
+            return f"Error: {str(e)}"
+
     def run_agent(self, query):
         """Run the agent with a user query."""
-        # Directly use the tools instead of going through the LLM
-        print("\nSTARTING DIRECT CALCULATION")
+        # Send query to LLM for planning
+        llm_response = self.get_llm_response(query)
+        print("\nLLM RESPONSE:")
+        print(llm_response)
         
-        # Get Fibonacci sequence
-        fib_seq = self.execute_tool({"tool": "fibonacci", "params": 6})
-        print(f"Fibonacci sequence: {fib_seq}")
+        # Parse tool calls from LLM response
+        tool_calls = self.parse_tool_calls(llm_response)
+        print("\nTOOL CALLS:")
+        print(tool_calls)
         
-        # Calculate exponential values
-        exp_values = self.execute_tool({"tool": "exponential", "params": fib_seq})
-        print(f"Exponential values: {exp_values}")
+        # Execute tools in sequence
+        previous_results = {}
+        for tool_call in tool_calls:
+            result = self.execute_tool(tool_call, previous_results)
+            previous_results[tool_call['tool']] = result
+            print(f"\nTOOL RESULT ({tool_call['tool']}):")
+            print(result)
         
-        # Calculate the sum
-        final_sum = self.execute_tool({"tool": "sum_values", "params": exp_values})
-        print(f"Final sum: {final_sum}")
-        
-        return final_sum
+        return previous_results
 
 # Main execution
 if __name__ == "__main__":
